@@ -1,0 +1,28 @@
+{
+  "name": "leader-ecommerce",
+  "version": "1.0.0",
+  "description": "Premium supplement e-commerce platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/api & npm run dev --workspace=apps/store-frontend & npm run dev --workspace=apps/admin-dashboard",
+    "build": "npm run build --workspaces",
+    "start": "npm start --workspace=packages/api",
+    "test": "npm test --workspaces",
+    "test:e2e": "npm run test:e2e --workspace=apps/store-frontend",
+    "lint": "npm run lint --workspaces",
+    "type-check": "npm run type-check --workspaces",
+    "db:migrate": "npm run -w packages/db db:migrate",
+    "db:seed": "npm run -w packages/db db:seed",
+    "db:reset": "npm run -w packages/db db:reset",
+    "db:generate": "npm run -w packages/db db:generate",
+    "import:excel": "npm run -w packages/api import:excel"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

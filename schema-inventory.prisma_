@@ -1,0 +1,305 @@
+// ========== INVENTORY & STOCK MANAGEMENT SCHEMA ==========
+// This extends the main schema.prisma with warehouse and stock tracking
+
+// ========== WAREHOUSE MANAGEMENT ==========
+
+model Warehouse {
+  id                String    @id @default(uuid())
+  name              String
+  location          String?
+  address           String?
+  phone             String?
+  email             String?
+  description       String?
+  
+  // Inventory tracking
+  inventory         InventoryItem[]
+  stockMovements    StockMovement[]
+  stockAdjustments  StockAdjustment[]
+  
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+// ========== INVENTORY LEVELS ==========
+
+model InventoryItem {
+  id                String    @id @default(uuid())
+  productId         String    @unique
+  warehouseId       String
+  
+  // Stock quantities
+  currentStock      Int       @default(0)
+  reservedStock     Int       @default(0)  // For pending orders
+  availableStock    Int       @default(0)
+  soldQuantity      Int       @default(0)  // Lifetime sold
+  damagedQuantity   Int       @default(0)
+  lostQuantity      Int       @default(0)
+  
+  // Reorder info
+  reorderPoint      Int       @default(20)
+  reorderQuantity   Int       @default(100)
+  minStockLevel     Int       @default(5)
+  maxStockLevel     Int       @default(1000)
+  
+  // Tracking
+  lastStockCheck    DateTime?
+  lastRestock       DateTime?
+  
+  // Relations
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  movements         StockMovement[]
+  adjustments       StockAdjustment[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([productId, warehouseId])
+}
+
+// ========== STOCK MOVEMENTS ==========
+
+enum StockMovementType {
+  PURCHASE        // Stock in - Purchase from supplier
+  RETURN          // Stock in - Customer return
+  ADJUSTMENT_IN   // Stock in - Manual adjustment/correction
+  TRANSFER_IN     // Stock in - Transfer from other warehouse
+  SALE            // Stock out - Sold to customer
+  DAMAGE          // Stock out - Damaged items
+  LOSS            // Stock out - Lost items
+  WASTE           // Stock out - Expired/waste
+  TRANSFER_OUT    // Stock out - Transfer to other warehouse
+}
+
+model StockMovement {
+  id                String    @id @default(uuid())
+  
+  // Product & Warehouse
+  inventoryId       String
+  productId         String
+  warehouseId       String
+  
+  // Movement details
+  type              StockMovementType
+  quantity          Int
+  notes             String?
+  
+  // Reference
+  referenceType     String?    // 'ORDER', 'PURCHASE', 'ADJUSTMENT', 'TRANSFER'
+  referenceId       String?    // Order ID, Purchase ID, etc
+  orderNumber       String?    // Human-readable order number
+  
+  // Customer/Recipient
+  recipientType     String?    // 'CUSTOMER', 'INTERNAL', 'SUPPLIER'
+  recipientId       String?    // User ID or customer ID
+  recipientName     String?    // Name of customer/recipient
+  recipientEmail    String?
+  
+  // Stock state snapshots
+  stockBefore       Int
+  stockAfter        Int
+  
+  // Timestamps
+  movementDate      DateTime
+  createdAt         DateTime  @default(now())
+  createdBy         String?    // User ID who recorded this
+  
+  // Relations
+  inventory         InventoryItem @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id])
+  order             Order?    @relation(fields: [referenceId], references: [id], onDelete: SetNull)
+  
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([movementDate])
+  @@index([referenceType, referenceId])
+}
+
+// ========== STOCK ADJUSTMENTS (Manual Corrections) ==========
+
+model StockAdjustment {
+  id                String    @id @default(uuid())
+  
+  inventoryId       String
+  productId         String
+  warehouseId       String
+  
+  // Adjustment details
+  adjustmentType    String    // 'CORRECTION', 'INVENTORY_COUNT', 'DAMAGE_WRITE_OFF', 'LOSS', 'SAMPLE'
+  quantityChange    Int       // Can be positive or negative
+  reason            String
+  notes             String?
+  
+  // Reference
+  physicalCount     Int?      // If from physical inventory count
+  
+  // Timestamps
+  adjustmentDate    DateTime
+  approvedBy        String?   // Admin user ID
+  approvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  createdBy         String    // User ID
+  
+  // Relations
+  inventory         InventoryItem @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id])
+  
+  @@index([productId])
+  @@index([adjustmentDate])
+}
+
+// ========== PURCHASE ORDERS (Stock In) ==========
+
+model PurchaseOrder {
+  id                String    @id @default(uuid())
+  poNumber          String    @unique
+  
+  // Supplier
+  supplierId        String?
+  supplierName      String
+  supplierContact   String?
+  
+  // Delivery
+  warehouseId       String
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id])
+  
+  // Items
+  items             PurchaseOrderItem[]
+  
+  // Status
+  status            PurchaseOrderStatus @default(DRAFT)
+  orderDate         DateTime
+  expectedDelivery  DateTime?
+  actualDelivery    DateTime?
+  
+  // Financials
+  totalCost         Decimal   @db.Decimal(10, 2)
+  notes             String?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  CONFIRMED
+  SHIPPED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrderItem {
+  id                String    @id @default(uuid())
+  purchaseOrderId   String
+  productId         String
+  
+  quantity          Int
+  unitCost          Decimal   @db.Decimal(10, 2)
+  totalCost         Decimal   @db.Decimal(10, 2)
+  received          Int       @default(0)
+  
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+}
+
+// ========== STOCK TRANSFERS BETWEEN WAREHOUSES ==========
+
+model StockTransfer {
+  id                String    @id @default(uuid())
+  transferNumber    String    @unique
+  
+  // From and To
+  sourceWarehouseId String
+  targetWarehouseId String
+  
+  items             StockTransferItem[]
+  
+  status            StockTransferStatus @default(PENDING
+  notes             String?
+  
+  initiatedAt       DateTime  @default(now())
+  approvedAt        DateTime?
+  completedAt       DateTime?
+}
+
+enum StockTransferStatus {
+  PENDING
+  APPROVED
+  SHIPPED
+  RECEIVED
+  CANCELLED
+}
+
+model StockTransferItem {
+  id                String    @id @default(uuid())
+  transferId        String
+  productId         String
+  
+  quantityRequested Int
+  quantitySent      Int       @default(0)
+  quantityReceived  Int       @default(0)
+  
+  transfer          StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+}
+
+// ========== STOCK AUDITS & PHYSICAL COUNTS ==========
+
+model InventoryAudit {
+  id                String    @id @default(uuid())
+  auditNumber       String    @unique
+  
+  warehouseId       String
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id])
+  
+  auditType         String    // 'FULL_COUNT', 'PARTIAL_COUNT', 'CYCLE_COUNT'
+  status            String    // 'DRAFT', 'IN_PROGRESS', 'COMPLETED'
+  
+  items             InventoryAuditItem[]
+  
+  discrepancies     Int       @default(0)
+  adjustmentsMade   Int       @default(0)
+  
+  startedAt         DateTime
+  completedAt       DateTime?
+  notes             String?
+  
+  createdBy         String
+  approvedBy        String?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model InventoryAuditItem {
+  id                String    @id @default(uuid())
+  auditId           String
+  productId         String
+  
+  systemQuantity    Int
+  physicalQuantity  Int
+  discrepancy       Int
+  discrepancyReason String?
+  
+  audit             InventoryAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+}
+
+// ========== EXTEND EXISTING MODELS ==========
+
+// Add to Product model:
+// - hasInventoryTracking: Boolean
+// - lastInventoryDate: DateTime
+// - inventory: InventoryItem[]
+// - movements: StockMovement[]
+// - adjustments: StockAdjustment[]
+// - purchaseOrderItems: PurchaseOrderItem[]
+// - auditItems: InventoryAuditItem[]
+
+// Add to Order model:
+// - stockMovements: StockMovement[]
+// - warehouseId: String (which warehouse fulfilled the order)

@@ -1,0 +1,149 @@
+// UPDATED PRODUCT MODEL WITH INVENTORY RELATIONS
+
+model Product {
+  id                String    @id @default(uuid())
+  sku               String    @unique
+  name              String
+  slug              String    @unique
+  description       String?
+  longDescription   String?
+  
+  // Pricing
+  basePrice         Decimal   @db.Decimal(10, 2)
+  retailPrice       Decimal   @db.Decimal(10, 2)
+  salePrice         Decimal?  @db.Decimal(10, 2)
+  costPrice         Decimal?  @db.Decimal(10, 2)
+  markup            Float?
+  
+  // Discount
+  discountPercent   Float?
+  discountFixed     Decimal?  @db.Decimal(10, 2)
+  visibleSavings    Decimal?  @db.Decimal(10, 2)
+  
+  // Stock & Inventory (new)
+  totalStock        Int       @default(0)
+  reservedStock     Int       @default(0)
+  availableStock    Int       @default(0)
+  lastInventoryDate DateTime?
+  
+  // Details
+  packSize          String?
+  manufacturer      String?
+  ingredients       String?
+  nutrition         String?
+  usageInstructions String?
+  warnings          String?
+  
+  // Features
+  featured          Boolean   @default(false)
+  bestSeller        Boolean   @default(false)
+  newArrival        Boolean   @default(false)
+  
+  // SEO
+  seoTitle          String?
+  seoDescription    String?
+  seoKeywords       String?
+  
+  // Status
+  status            ProductStatus @default(ACTIVE)
+  
+  // Relations
+  categories        ProductCategory[]
+  images            ProductImage[]
+  reviews           Review[]
+  discounts         Discount[] @relation("ProductDiscounts")
+  orderItems        OrderItem[]
+  wishlistItems     WishlistItem[]
+  
+  // NEW: Inventory Relations
+  inventory         InventoryItem[]
+  movements         StockMovement[]
+  adjustments       StockAdjustment[]
+  purchaseOrderItems PurchaseOrderItem[]
+  transferItems     StockTransferItem[]
+  auditItems        InventoryAuditItem[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([sku])
+  @@index([totalStock])
+}
+
+// UPDATED ORDER MODEL WITH INVENTORY TRACKING
+
+model Order {
+  id                String    @id @default(uuid())
+  orderNumber       String    @unique
+  
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  
+  // NEW: Warehouse tracking
+  warehouseId       String?
+  warehouse         Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  
+  // Items
+  items             OrderItem[]
+  
+  // Pricing
+  subtotal          Decimal   @db.Decimal(10, 2)
+  taxAmount         Decimal   @db.Decimal(10, 2)
+  shippingCost      Decimal   @db.Decimal(10, 2) @default(0)
+  discountAmount    Decimal   @db.Decimal(10, 2) @default(0)
+  total             Decimal   @db.Decimal(10, 2)
+  
+  // Discount/Coupon
+  couponCode        String?
+  appliedDiscount   String?
+  
+  // Shipping
+  shippingAddressId String?
+  shippingMethod    String?
+  trackingNumber    String?
+  
+  // Payment
+  paymentMethod     String?
+  paymentStatus     PaymentStatus @default(PENDING)
+  stripePaymentId   String?
+  
+  // Status
+  status            OrderStatus @default(PENDING)
+  notes             String?
+  
+  // NEW: Inventory tracking
+  stockMovements    StockMovement[] @relation("OrderStockMovements")
+  inventoryProcessed Boolean    @default(false)
+  inventoryProcessedAt DateTime?
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  paidAt            DateTime?
+  shippedAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+}
+
+// Add relation to User model if not already there
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  name              String?
+  passwordHash      String
+  role              UserRole  @default(CUSTOMER)
+  newsletter        Boolean   @default(false)
+  
+  orders            Order[]
+  addresses         Address[]
+  reviews           Review[]
+  wishlist          Wishlist?
+  
+  // NEW: For staff/warehouse users
+  staffRole         String?   // 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', etc
+  assignedWarehouse String?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastLogin         DateTime?
+}

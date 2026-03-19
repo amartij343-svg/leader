@@ -1,0 +1,442 @@
+// DATABASE SCHEMA - PostgreSQL with Prisma ORM
+// All entities for supplement e-commerce store
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ========== USERS & AUTH ==========
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  name              String?
+  passwordHash      String
+  role              UserRole  @default(CUSTOMER)
+  newsletter        Boolean   @default(false)
+  
+  // Relations
+  orders            Order[]
+  addresses         Address[]
+  reviews           Review[]
+  wishlist          Wishlist?
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  lastLogin         DateTime?
+}
+
+enum UserRole {
+  ADMIN
+  CUSTOMER
+}
+
+// ========== PRODUCTS & CATEGORIES ==========
+
+model Category {
+  id                String    @id @default(uuid())
+  name              String
+  slug              String    @unique
+  description       String?
+  image             String?
+  order             Int       @default(0)
+  
+  // Hierarchy
+  parentId          String?
+  parent            Category? @relation("SubCategories", fields: [parentId], references: [id])
+  children          Category[] @relation("SubCategories")
+  
+  // SEO
+  seoTitle          String?
+  seoDescription    String?
+  seoKeywords       String?
+  
+  // Relations
+  products          ProductCategory[]
+  discounts         Discount[] @relation("CategoryDiscounts")
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Product {
+  id                String    @id @default(uuid())
+  sku               String    @unique
+  name              String
+  slug              String    @unique
+  description       String?
+  longDescription   String?
+  
+  // Pricing
+  basePrice         Decimal   @db.Decimal(10, 2)  // From Excel
+  retailPrice       Decimal   @db.Decimal(10, 2)
+  salePrice         Decimal?  @db.Decimal(10, 2)
+  costPrice         Decimal?  @db.Decimal(10, 2)
+  markup            Float?    // Percentage
+  
+  // Discount
+  discountPercent   Float?
+  discountFixed     Decimal?  @db.Decimal(10, 2)
+  visibleSavings    Decimal?  @db.Decimal(10, 2)
+  
+  // Inventory
+  stockQuantity     Int       @default(0)
+  lowStockThreshold Int       @default(10)
+  status            ProductStatus @default(ACTIVE)
+  
+  // Details
+  packSize          String?
+  manufacturer      String?
+  ingredients       String?
+  nutrition         String?
+  usageInstructions String?
+  warnings          String?
+  
+  // Features
+  featured          Boolean   @default(false)
+  bestSeller        Boolean   @default(false)
+  newArrival        Boolean   @default(false)
+  
+  // SEO
+  seoTitle          String?
+  seoDescription    String?
+  seoKeywords       String?
+  
+  // Relations
+  categories        ProductCategory[]
+  images            ProductImage[]
+  reviews           Review[]
+  discounts         Discount[] @relation("ProductDiscounts")
+  orderItems        OrderItem[]
+  wishlistItems     WishlistItem[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  OUT_OF_STOCK
+}
+
+model ProductCategory {
+  id                String    @id @default(uuid())
+  productId         String
+  categoryId        String
+  
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category          Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, categoryId])
+}
+
+model ProductImage {
+  id                String    @id @default(uuid())
+  productId         String
+  url               String
+  alt               String?
+  order             Int       @default(0)
+  featured          Boolean   @default(false)
+  
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime  @default(now())
+}
+
+// ========== REVIEWS & RATINGS ==========
+
+model Review {
+  id                String    @id @default(uuid())
+  productId         String
+  userId            String
+  rating            Int       // 1-5
+  title             String?
+  comment           String?
+  approved          Boolean   @default(false)
+  helpful           Int       @default(0)
+  
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+// ========== WISHLIST ==========
+
+model Wishlist {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items             WishlistItem[]
+  
+  createdAt         DateTime  @default(now())
+}
+
+model WishlistItem {
+  id                String    @id @default(uuid())
+  wishlistId        String
+  productId         String
+  
+  wishlist          Wishlist  @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([wishlistId, productId])
+}
+
+// ========== ORDERS & CART ==========
+
+model Cart {
+  id                String    @id @default(uuid())
+  sessionId         String    @unique  // For non-logged-in users
+  userId            String?   @unique  // For logged-in users
+  
+  items             CartItem[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  user              User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model CartItem {
+  id                String    @id @default(uuid())
+  cartId            String
+  productId         String
+  quantity          Int       @default(1)
+  price             Decimal   @db.Decimal(10, 2)
+  
+  cart              Cart      @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                String    @id @default(uuid())
+  orderNumber       String    @unique
+  userId            String
+  
+  // Items
+  items             OrderItem[]
+  
+  // Pricing
+  subtotal          Decimal   @db.Decimal(10, 2)
+  taxAmount         Decimal   @db.Decimal(10, 2)
+  shippingCost      Decimal   @db.Decimal(10, 2) @default(0)
+  discountAmount    Decimal   @db.Decimal(10, 2) @default(0)
+  total             Decimal   @db.Decimal(10, 2)
+  
+  // Discount/Coupon
+  couponCode        String?
+  appliedDiscount   String?
+  
+  // Shipping
+  shippingAddressId String?
+  shippingMethod    String?
+  trackingNumber    String?
+  
+  // Payment
+  paymentMethod     String?
+  paymentStatus     PaymentStatus @default(PENDING)
+  stripePaymentId   String?
+  
+  // Status
+  status            OrderStatus @default(PENDING
+  notes             String?
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  paidAt            DateTime?
+  shippedAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  
+  // Relations
+  user              User      @relation(fields: [userId], references: [id])
+  shippingAddress   Address?  @relation(fields: [shippingAddressId], references: [id])
+}
+
+model OrderItem {
+  id                String    @id @default(uuid())
+  orderId           String
+  productId         String
+  
+  productSku        String    // Snapshot
+  productName       String    // Snapshot
+  quantity          Int
+  pricePerUnit      Decimal   @db.Decimal(10, 2)
+  discountApplied   Decimal?  @db.Decimal(10, 2)
+  total             Decimal   @db.Decimal(10, 2)
+  
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [productId], references: [id])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ========== DISCOUNTS & COUPONS ==========
+
+model Discount {
+  id                String    @id @default(uuid())
+  name              String
+  type              DiscountType
+  value             Float     // Percentage (e.g., 10) or fixed amount
+  
+  // Target
+  scope             DiscountScope  // GLOBAL, CATEGORY, PRODUCT
+  productId         String?
+  categoryId        String?
+  
+  // Validity
+  active            Boolean   @default(true)
+  startDate         DateTime?
+  endDate           DateTime?
+  
+  // Limits
+  minimumOrder      Decimal?  @db.Decimal(10, 2)
+  maxRedemptions    Int?
+  usageCount        Int       @default(0)
+  usagePerUser      Int       @default(1)
+  
+  code              String?   @unique  // For coupons
+  
+  // Relations
+  product           Product?  @relation("ProductDiscounts", fields: [productId], references: [id], onDelete: Cascade)
+  category          Category? @relation("CategoryDiscounts", fields: [categoryId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+  BUY_X_GET_Y
+}
+
+enum DiscountScope {
+  GLOBAL
+  CATEGORY
+  PRODUCT
+}
+
+// ========== CUSTOMER INFO ==========
+
+model Address {
+  id                String    @id @default(uuid())
+  userId            String
+  
+  name              String
+  street            String
+  city              String
+  postalCode        String
+  country           String
+  phone             String?
+  
+  isDefault         Boolean   @default(false)
+  type              AddressType @default(BILLING)
+  
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  
+  createdAt         DateTime  @default(now())
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+  BOTH
+}
+
+// ========== CMS & CONTENT ==========
+
+model Page {
+  id                String    @id @default(uuid())
+  title             String
+  slug              String    @unique
+  content           String    @db.Text
+  published         Boolean   @default(false)
+  seoTitle          String?
+  seoDescription    String?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model BlogPost {
+  id                String    @id @default(uuid())
+  title             String
+  slug              String    @unique
+  excerpt           String?
+  content           String    @db.Text
+  image             String?
+  published         Boolean   @default(false)
+  featured          Boolean   @default(false)
+  
+  seoTitle          String?
+  seoDescription    String?
+  tags              String?   // JSON array
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  publishedAt       DateTime?
+}
+
+// ========== SETTINGS ==========
+
+model SiteSettings {
+  id                String    @id @default(uuid())
+  
+  // Store Info
+  storeName         String    @default("Leader Store")
+  storeDescription  String?
+  contactEmail      String?
+  contactPhone      String?
+  
+  // Policies
+  privacyPolicy     String?   @db.Text
+  termsOfService    String?   @db.Text
+  returnPolicy      String?   @db.Text
+  
+  // Tax
+  taxRate           Float     @default(21)  // VAT for EU
+  
+  // Shipping
+  freeShippingOver  Decimal   @db.Decimal(10, 2)
+  defaultShipping   Decimal   @db.Decimal(10, 2)
+  
+  // Social
+  socialFacebook    String?
+  socialInstagram   String?
+  socialLinkedin    String?
+  
+  // Analytics
+  googleAnalyticsId String?
+  metaPixelId       String?
+  
+  updatedAt         DateTime  @updatedAt
+}
